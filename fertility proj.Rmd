@@ -1,0 +1,164 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r dataDownload, include=FALSE}
+pUrl = 'http://wfs.dhsprogram.com/pt/ptsr01.dat'
+pName = file.path(tempdir(), 'portugal.dat')
+if(!file.exists(pName)) {
+  download.file(pUrl, pName)
+}
+
+datNames = rbind(
+		age=c(45,2),
+		ageMarried=c(149,2), 
+		monthsSinceM = c(157,4),
+#		failedPregnancies=c(421,2),
+#		failedPregStill=c(423,2),
+#		failedPregSpAb=c(425,2),
+		pregnancies=c(433,2),
+		children=c(435,2),
+		sons=c(443,2),
+#		firstBirthInterval = c(479,2),
+		region = c(641,2),
+		literacy = c(649,2)
+)
+		colnames(datNames ) = c('start','len')
+		datNames = cbind(startm1=datNames[,1]-1,datNames, sum=apply(datNames, 1,sum))
+		cbind(datNames[-1,1] , datNames[seq(1, nrow(datNames)-1),4])
+		datNames[-1,1] = datNames[-1,2] - datNames[seq(1, nrow(datNames)-1),4]
+		dWidths = as.vector(t(datNames[,c(1,3)]))
+		dNames = paste(rep(rownames(datNames), rep(2, nrow(datNames))),
+  	rep(c( "junk",""), nrow(datNames)), sep="") 
+		
+		dNames = dNames[dWidths > 0]
+		dWidths = dWidths[dWidths > 0]
+		
+		formats = list(
+			ageMarried = data.frame(code=1:7,  label=c(0,15,18,20,22,25,30)),
+			region = data.frame(code=1:5, 
+				label=c('lisbon','porto','20k+', '10-20k', 'lt10k')),
+			literacy = data.frame(code=1:2, label=c('yes','no')),
+			firstBirthInterval = data.frame(
+					code = 1:8,
+					label = c(
+							'lt0','0-7', '8-11','12-23',
+							'24-35','36-47','48-59','60-Inf'
+							)
+					)
+		)
+
+	
+
+		formats$ageMarried$label = 
+  	paste(formats$ageMarried$label, 'to',
+  	c(formats$ageMarried$label[-1], 'Inf'), sep='')
+  	formats$ageMarried = rbind(formats$ageMarried, data.frame(code=88, label='never'))
+
+   
+  portugal = read.fwf(
+    pName,
+    dWidths, col.names=dNames,
+    header=FALSE)
+  
+  portugal = portugal[,grep("junk$", names(portugal), invert=TRUE)]
+
+for(D in intersect(names(portugal), names(formats))){
+  		portugal[[D]] = factor(portugal[[D]],
+  			levels=formats[[D]]$code, 
+				labels=formats[[D]]$label)
+}
+portugal$ageMarried = relevel(portugal$ageMarried, '22to25')
+portugal$region = relevel(portugal$region, 'lt10k')
+
+if(FALSE) save(portugal, file='portugal.RData')
+```
+
+Introduction:
+  Fertility rates and demographic factors have had their relationship widely studied to determine what the key determinants are for family size. The ability to understand how these variables can influence fertility is absolutely essential for assessing population growth and drafting effective policy. There have been several studies that explore these relationships with the goal demonstrating the impact of education, age at marriage, and family planning attitudes on fertility trends. For example, a study on male literacy and family size in Chawal City found that educated men were significantly more likely to favor having a smaller family (77%) compared to uneducated men (19.2%)(p<0.001) (Mahmood, Khan, Masood, 2016). This study suggests that higher literacy rates lead to lower fertility. Additionally, a study conducted in Uganda analyzing fertility trends returned that age at first marriage was the strongest driver of fertility change, contributing to 20.6% of the variation in fertility rates, while other factors such as age at first sex (10.5%), family size preferences (8.4%), and contraceptive use (8.2%) were also associated with fertility changes, marriage timing had the greatest impact (Ariho, Kabagenyi, 2020). The results of this study suggest that delayed marriage is a key factor in reducing family size. Finally, further research on age at marriage and completed family size revealed a nonlinear relationship between marriage age and fertility, with much higher birth rates among women who married before age 18 or after age 25 (Bumpass, Mburugu, 1977). This suggests that at both extreme ends of possible age at marriage, it’s possible that they lead to larger families likely due to differing reproductive patterns and socioeconomic factors. These studies all make for a good foundation for analyzing the relationship between marriage age, literacy, and fertility rates. The findings derived from these studies suggest a higher level of literacy and a delayed marriage are closely associated with smaller family sizes. This makes them key variables to keep an eye on in further investigations. This study will use a generalized linear model to analyze how marriage age and literacy affect family size in Portugal. It will further give a clearer idea into how fertility trends can be shaped by these variables.
+
+Methods:
+  The dataset used for this study contains 5,148 observations on fertility patterns in Portugal. It includes key demographic and reproductive variables that allows for a deep analysis of factors that include the size of families. The primary response variable in this study is:
+Family Size (children) – Count of children per individual (discrete non-negative integer)
+	The explanatory variables are:
+Age at Marriage (ageMarried) – Factor variable representing different marriage age groups(e.g., “15to18”, “22to25”)
+Literacy (literacy) – Categorical variable indicating literacy status (yes = literate, no = illiterate)
+	There are also other variables such as age, number of pregnancies, and region, though they are not directly included in what was primarily analyzed.
+
+	Since the response variable is count data, a generalized linear model with a poisson distribution because this model is appropriate for modeling count-based outcomes where values cannot be negative. The equation for this model can be written:
+E(Y) = e^{\beta_0 + \beta_1(\text{ageMarried}) + \beta_2(\text{literacy})}
+Here the values are as follows:
+ Y = Expected number of children
+ \beta_0 = Intercept
+ \beta_1 = Effect of marriage age on fertility
+ \beta_2 = Effect of literacy on fertility
+  To confirm that this was the correct choice, overdispersion needed to be checked. If we observe overdispersion, a different model would need to be considered.
+
+  Poisson regression assumes the mean and variance of the response variable (family size) are equal. It's typically best used for count data without excess variability. If variance happens to be greater than mean, dispersion is calculated to see whether the model fits. If the variance significantly exceeds the mean, it means that there exists overdispersion. In this case, a switch to a negative binomial regression model would be made. Based on this dataset, poisson regression was indeed deemed appropriate for this experiment, as the dispersion statistic (1.32) was within an acceptable range.
+
+Results:
+```{r}
+summary(portugal)
+```
+To better understand the distribution of variables, the data is visualized as such:
+```{r}
+#dist of family size
+hist(portugal$children, 
+     main = "Distribution of Family Size", 
+     xlab = "Number of Children", 
+     col = "skyblue", 
+     border = "black")
+#age at marriage
+boxplot(portugal$age, 
+        main = "Age Distribution", 
+        ylab = "Age", 
+        col = "lightgreen")
+```
+
+Family size is right-skewed, meaning most individuals have families consisting of 0-3 children, but some have large families (max = 17).
+Age at marriage is mostly within 22–25 years, but some marry much younger or older.
+Majority (4,567) are literate, while only 581 are illiterate.
+
+```{r}
+boxplot(children ~ literacy, data = portugal, 
+        main = "Family Size by Literacy Level", 
+        xlab = "Literacy", 
+        ylab = "Family Size", 
+        col = c("blue", "red"))
+```
+
+Given this boxplot, it’s clear illiterate individuals tend to have more children, supporting findings from past studies.
+
+The poisson model was fitted with family size as the dependent variable and age at marriage & literacy as predictors:
+
+```{r}
+mean(portugal$children)
+var(portugal$children)
+poisson_model <- glm(children ~ as.numeric(ageMarried) + literacy, 
+                     family = poisson, data = portugal)
+summary(poisson_model)
+poisson_dispersion <- sum(residuals(poisson_model, type = "pearson")^2) / poisson_model$df.residual
+poisson_dispersion
+```
+
+  - Marriage Age (-0.0149, p = 0.00135): For each additional year of marriage delay, expected family size decreases by 1.5%
+  - Literacy (0.6327, p < 2e-16): Illiterate individuals have 63% more children than literate individuals.
+  - Both predictors are highly significant (p < 0.05), confirming their strong influence on fertility.
+  - The dispersion statistic = 1.32, meaning Poisson regression is acceptable
+Thus,
+  - Later marriage → Smaller family sizes.
+  - Literate individuals → Fewer children.
+  - Model fits well with no strong overdispersion detected.
+
+Conclusion:
+The results of this study further confirm that age at marriage and literacy significantly influence family size in Portugal. This poisson regression model showed that for each additional year of marriage that is delayed, the expected number of children the family would have decreases by approximately 1.5% (\beta = -0.0149, p = 0.00135). Furthermore, illiterate individuals are shown to have, on average, 63% more children than literate individuals (\beta = 0.6327, p < 2e-16). Thus, these results conclude that both delayed marriage and literacy significantly contribute to lower fertility rates. It’s also important to note that these findings align with what was found in earlier studies. The Uganda fertility study found that age at first marriage was the strongest driver of fertility change (20.6%) (Ariho, Kabagenyi, 2020). This aligns as it also emphasizes that delayed marriage is a key factor in reducing family size. Additionally, the Chakwal City study on literacy and fertility also found that men who were educated/literate were significantly more likely to support smaller families (Mahmood, Khan, Masood, 2016), further showing that literacy leads to smaller family sizes. The study on age at marriage and completed family size reported a nonlinear relationship between marriage age and fertility, suggesting that both very early and late marriages can lead to larger families. This is something that would need to be further investigated in the Portuguese context. Overall, the results derived from these studies reinforce the idea that education and marriage timing are significant factors of fertility. It suggests that to regulate population growth and improve family planning, policies that promote female education and delayed marriage would need to be put in place within Portugal. Future studies could further explore regional differences in fertility patterns and its interaction between literacy and age at marriage to have a wider view of these demographic trends.
+
+Sources:
+Ariho, P., & Kabagenyi, A. (2020, January 16). Age at first marriage, age at first sex, family size preferences, contraception and change in fertility among women in Uganda: Analysis of the 2006–2016 period - BMC Women’s health. SpringerLink. https://link.springer.com/article/10.1186/s12905-020-0881-4
+(Ariho, Kabagenyi, 2020)
+Bumpass, L., & Mburugu, E. (1977). Age at marriage and completed family size. PubMed. https://pubmed.ncbi.nlm.nih.gov/877603/
+(Bumpass, Mburugu, 1977)
+Mahmood, H., Khan, Z., & Masood, S. (2016, April 4). Effects of male literacy on family size: A cross sectional study conducted in Chakwal city. ORIGINAL ARTICLE. https://d1wqtxts1xzle7.cloudfront.net/76122386/7689-libre.pdf?1639211735=&response-content-disposition=inline%3B+filename%3DEffects_of_male_literacy_on_family_size.pdf&Expires=1739216123&Signature=SLU47rkp~nCplXILe32U5pdyUpq99rCeqgl20HC~e3U8KFRfEnMNkD50pPDg~RN3TyQ~ebUCrWCZDYYx1E76AxpfzgQw2ag28pdVrMhv8DOxcNkvfAjjdsUdKX8aOSB~VoPTu-I2EDWSl5gwbnLSAVe9aWkEy~if1WYxgbFpBaKigSpbWxrIAgxejPfkg5aSSis8x8H0~AT1CiFZU6Jur17Pqib7BmV0VxhBgs1BiWaeCgkJuaxYSxmWThPZf5l-yKe82Yg7yhgglXDfaaGrtVENYgkxgdzAEswcQQwcfxSqxeeXM8gYZZLqBBYZpH3wfb53vPIBkk42JR8XnZqlRg__&Key-Pair-Id=APKAJLOHF5GGSLRBV4ZA 
+(Mahmood, Khan, Masood, 2016)
